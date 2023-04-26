@@ -9,14 +9,15 @@ import prisma_sase
 import time
 import cloudgenix
 import ipaddress
+from urllib.parse import urlparse
 
-PRISMASASE_CLIENT_ID = xxxxx
-PRISMASASE_CLIENT_SECRET= xxxx
-TSGID = xxxxxx
+PRISMASASE_CLIENT_ID ="ds-alerting-automation@1228584868.iam.panserviceaccount.com"
+PRISMASASE_CLIENT_SECRET="37f1fed4-37a1-441c-b074-01a697c8a1cd"
+TSGID = 1228584868
 
 #Login to controller
 sdk = prisma_sase.API(controller="https://api.sase.paloaltonetworks.com", ssl_verify=False)
-#sdk.set_debug(3)
+sdk.set_debug(3)
 sdk.interactive.login_secret(client_id=PRISMASASE_CLIENT_ID, client_secret=PRISMASASE_CLIENT_SECRET, tsg_id=TSGID)
 
 #Define Globals
@@ -42,14 +43,11 @@ if resp.cgx_status:
             cnt +=1
         except:
             pass
-#print(cnt)
-#prisma_sase.jd(pa_custom_app_list)
 
 #Pull all apps tagged with pa-synced-custom-app
 resp = sdk.get.appdefs()
 if resp.cgx_status:
     applist = resp.cgx_content.get("items", None)
-    #print("APPLIST {}".format(applist))
     for app in applist:
         try:
             if app["tags"] == ["pa-synced"]:
@@ -58,8 +56,6 @@ if resp.cgx_status:
         except:
             pass
 
-    #print ("SYNCED APP LIST :") 
-    #print(synced_app_list)
 else:
     pass
 
@@ -81,7 +77,6 @@ for pa_custom_app in pa_custom_app_list:
         domain_flag = False
 
         if app_name in synced_app_list:
-            #print(" {} is in synced list".format(app_name))
             skip_app = True
 
         
@@ -97,12 +92,18 @@ for pa_custom_app in pa_custom_app_list:
                             #check domain name for ip address
                             new_domain_name = domain_name.replace('\\','')
                             new_domain_name = new_domain_name.replace('\\', '')
-                            #print("DOMAIN NAME {}".format(new_domain_name))
                             try:
                                 ip_object = ipaddress.ip_address(new_domain_name)
                             except:
                                 domain_flag = True
-                                domain_name_list.append(new_domain_name)
+                                if new_domain_name[0] == "*":
+                                    modified_domain_name = new_domain_name[1:]
+                                elif new_domain_name[0:2] == ".*":
+                                    modified_domain_name = new_domain_name[2:]
+                                else:
+                                    modified_domain_name = new_domain_name[0:]
+
+                                domain_name_list.append(modified_domain_name)
                             try: 
                                 qualifier = signature_or_condition["operator"]["pattern_match"]["qualifier"]
                                 if skip_app!= True:
@@ -121,10 +122,8 @@ for pa_custom_app in pa_custom_app_list:
     except:
         skip_app = True
     
-    
+    domain_name_list = list(set(domain_name_list))
 
-    #print(skip_app)
-    #print(domain_name_list)
 
     #Max allowed domains in a single app in SDWAN is 16, if PA domain list > 16 , skip app config.
     if len(domain_name_list) > 16:
@@ -172,9 +171,11 @@ for pa_custom_app in pa_custom_app_list:
         
 
         resp = sdk.post.appdefs(data=payload)
+        sdk.set_debug(3)
         if resp.cgx_status:
             print("SUCCESS: Custom App {} created".format(pa_custom_app["name"]))
         else:
+            app_name_list.remove(pa_custom_app["name"])
             print("ERR: Could not create Custom App {}".format(pa_custom_app["name"]))
           
 
